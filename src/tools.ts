@@ -3,89 +3,86 @@ import z from "zod";
 import { db } from "./db/client";
 import { debtors } from "./db/schema";
 import { eq } from "drizzle-orm";
-import { crudPolicy } from "drizzle-orm/neon";
+import { extractSchemaInfo, mapStringToTableName } from "./db/utils";
 
-const getAddDebtors = tool({
-    description: "Get all debtors",
-    inputSchema: z.object({}),
-    execute: async ({ }) => {
-        console.log('Running getAddDebtors tool')
-        const entries = await db.query.debtors.findMany();
-        return entries;
-    }
-});
+import * as schema from "./db/schema";
 
-const addDebtor = tool({
-    description: "Add a new debtor",
+const db_crud = tool({
+    description: "Allows basic CRUD operations on the database. Check the schema for table structures before using this tool.",
     inputSchema: z.object({
-        debtor_name: z.string().min(1),
-        amount_owed: z.number().int().min(0),
-        currency: z.string().default('CZK'),
-        reason: z.string().optional(),
+        operation: z.enum(["create", "read", "update", "delete"]).describe("The CRUD operation to perform. Query selects and returns all records."),
+        table: z.enum(["debtors", "video_ideas"]).describe("The table to perform the operation on."),
+        data: z.record(z.string(), z.any()).optional().describe("The data for the operation. Required for create and update operations. Must follow the table schema."),
     }),
-    execute: async ({ debtor_name, amount_owed, currency, reason }) => {
-        console.log('Running addDebtor tool with input:', { debtor_name, amount_owed, currency, reason });
+    execute: async ({ operation, table, data }) => {
+
         try {
-            const newDebtor = await db.insert(debtors).values({
-                debtor_name: debtor_name,
-                amount_owed: amount_owed,
-                currency: currency,
-                reason: reason,
-                payed: false,
-            }).returning();
-            return newDebtor;
+
+            console.log(`Running db_crud tool with input:`, { operation, table, data });
+
+            switch (operation) {
+                case "create":
+                    if (!data) throw new Error("Data is required for create operation");
+
+                    const insertResult = await db.insert(mapStringToTableName(table)).values(data).returning();
+                    return insertResult;
+
+                case "read":
+                    const records = await db.select().from(mapStringToTableName(table));
+                    return records;
+
+                case "update":
+                    if (!data || !data.id) throw new Error("Data with 'id' is required for update operation");
+
+                    const id = data.id;
+                    delete data.id;
+
+                    const updateResult = await db.update(mapStringToTableName(table))
+                        .set(data)
+                        .where(eq(mapStringToTableName(table).id, id))
+                        .returning();
+                    return updateResult;
+
+                case "delete":
+                    if (!data || !data.id) throw new Error("Data with 'id' is required for delete operation");
+
+                    const deleteResult = await db.delete(mapStringToTableName(table))
+                        .where(eq(mapStringToTableName(table).id, data.id))
+                        .returning();
+                    return deleteResult;
+
+                default:
+                    throw new Error(`Unknown operation: ${operation}`);
+            }
+
         } catch (error) {
-            console.error('Error inserting new debtor:', error);
-            throw error;
+            console.error("Error in db_crud tool:", error);
+            return { error: error instanceof Error ? error.message : String(error) };
         }
     }
 });
 
-const markDebtorAsPaid = tool({
-    description: "Mark a debtor as paid",
-    inputSchema: z.object({
-        id: z.number().int().min(1),
-    }),
-    execute: async ({ id }) => {
-        console.log('Running markDebtorAsPaid tool with input:', { id });
-        const updatedDebtor = await db.update(debtors)
-            .set({ payed: true })
-            .where(eq(debtors.id, id))
-            .returning();
-        return updatedDebtor;
+
+
+const getDbSchema = tool({
+    description: "Get the database schema",
+    inputSchema: z.object({}),
+    execute: async ({ }) => {
+        console.log('Running getDbSchema tool')
+        try {
+            return {
+                debtors: extractSchemaInfo(schema.debtors),
+                videoIdeas: extractSchemaInfo(schema.videoIdeas),
+            };
+        } catch (error) {
+            console.error("Error in getDbSchema tool:", error);
+            return { error: error instanceof Error ? error.message : String(error) };
+        }
     }
 });
 
-const updateDebtor = tool({
-    description: "Update debtor information",
-    inputSchema: z.object({
-        id: z.number().int().min(1),
-        debtor_name: z.string().min(1).optional(),
-        amount_owed: z.number().int().min(0).optional(),
-        currency: z.string().optional(),
-        reason: z.string().optional(),
-        payed: z.boolean().optional(),
-    }),
-    execute: async ({ id, debtor_name, amount_owed, currency, reason, payed }) => {
-        console.log('Running updateDebtor tool with input:', { id, debtor_name, amount_owed, currency, reason, payed });
-        const updateData: any = {};
-        if (debtor_name !== undefined) updateData.debtor_name = debtor_name;
-        if (amount_owed !== undefined) updateData.amount_owed = amount_owed;
-        if (currency !== undefined) updateData.currency = currency;
-        if (reason !== undefined) updateData.reason = reason;
-        if (payed !== undefined) updateData.payed = payed;
 
-        const updatedDebtor = await db.update(debtors)
-            .set(updateData)
-            .where(eq(debtors.id, id))
-            .returning();
-        return updatedDebtor;
-    }
-});
-
-export const debtorTools = {
-    getAddDebtors,
-    addDebtor,
-    markDebtorAsPaid,
-    updateDebtor,
+export const allTools = {
+    db_crud,
+    getDbSchema,
 };

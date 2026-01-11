@@ -8,5 +8,12 @@ export const debtors = sqliteTable("debtors", {
     payed: int({ mode: 'boolean' }).notNull().default(false),
     currency: text().notNull().default('CZK'),
     reason: text().default(''),
-    date: text().default(sql`(CURRENT_DATE)`),
+    created: text().default(sql`(CURRENT_DATE)`),
+});
+
+export const videoIdeas = sqliteTable("video_ideas", {
+    id: int().primaryKey({ autoIncrement: true }),
+    idea: text().notNull(),
+    filmed: int({ mode: 'boolean' }).notNull().default(false),
+    created: text().default(sql`(CURRENT_DATE)`),
 });

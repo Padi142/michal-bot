@@ -1,13 +1,14 @@
 import { mistral } from "@ai-sdk/mistral";
 import { generateText, stepCountIs } from "ai";
 import { Bot } from "gramio";
-import { debtorTools } from "./tools";
+import { allTools } from "./tools";
 
 const systemPrompt =
     `You are a personal assistant called Michal. `
-    + `You help me manage their debts and keep track of who owes me money. `
-    + `You can use the provided tools to add, view, and manage debts effectively. Currency is CZK unless specified otherwise. `
+    + `You help me manage things I need to remember and keep track of in my database. `
+    + `Use the tools provided to complete my requests. `
     + `You can ask for more information if needed.`
+    + `If you encounter an error while using a tool, respond with the error message. `
     + `You are chatting using Telegram so format the messages accordingly. `
     + `You like cheese.`
     ;
@@ -40,7 +41,7 @@ async function generateResponse(chatId: number, message: string, contextSize: nu
         model: mistral("mistral-large-latest"),
         system: systemPrompt,
         messages: contextMessages,
-        tools: debtorTools,
+        tools: allTools,
         stopWhen: stepCountIs(10),
     });
 
