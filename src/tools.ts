@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { extractSchemaInfo, mapStringToTableName } from "./db/utils";
 
 import * as schema from "./db/schema";
+import Sandbox from "@e2b/code-interpreter";
 
 const db_crud = tool({
     description: "Allows basic CRUD operations on the database. Check the schema for table structures before using this tool.",
@@ -81,8 +82,35 @@ const getDbSchema = tool({
     }
 });
 
+const runCode = tool({
+    description: "Run runs the code you provide. Can be anything from bash or Python.",
+    inputSchema: z.object({
+        code: z.string().describe("The code to be executed."),
+        language: z.enum(["python", "bash"]).default("python").describe("The programming language of the code. Defaults to python."),
+    }),
+    execute: async ({ code, language }) => {
+        try {
+            console.log("Executing code:", code);
+            const sandbox = await Sandbox.create()
+            const { text, results, logs, error } = await sandbox.runCode(code, { language });
+            sandbox.kill()
+
+            console.log("Code execution results:", { text, results, logs, error });
+
+            if (error) {
+                return { error: String(error) };
+            }
+
+            return results;
+        } catch (error) {
+            console.error("Error in runCode tool:", error);
+            return { error: error instanceof Error ? error.message : String(error) };
+        }
+    }
+});
 
 export const allTools = {
     db_crud,
     getDbSchema,
+    runCode,
 };

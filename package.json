@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@ai-sdk/mistral": "^3.0.5",
+    "@e2b/code-interpreter": "^2.3.3",
     "@libsql/client": "^0.17.0",
     "ai": "^6.0.27",
     "dotenv": "^17.2.3",
