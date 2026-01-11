@@ -13,7 +13,7 @@ const db_crud = tool({
     description: "Allows basic CRUD operations on the database. Check the schema for table structures before using this tool.",
     inputSchema: z.object({
         operation: z.enum(["create", "read", "update", "delete"]).describe("The CRUD operation to perform. Query selects and returns all records."),
-        table: z.enum(["debtors", "video_ideas"]).describe("The table to perform the operation on."),
+        table: z.enum(["debtors", "video_ideas", "todos"]).describe("The table to perform the operation on."),
         data: z.record(z.string(), z.any()).optional().describe("The data for the operation. Required for create and update operations. Must follow the table schema."),
     }),
     execute: async ({ operation, table, data }) => {
@@ -75,6 +75,7 @@ const getDbSchema = tool({
             return {
                 debtors: extractSchemaInfo(schema.debtors),
                 videoIdeas: extractSchemaInfo(schema.videoIdeas),
+                todos: extractSchemaInfo(schema.todos),
             };
         } catch (error) {
             console.error("Error in getDbSchema tool:", error);

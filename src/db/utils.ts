@@ -1,4 +1,4 @@
-import { debtors, videoIdeas } from "./schema";
+import { debtors, todos, videoIdeas } from "./schema";
 
 export function mapStringToTableName(table: string) {
     switch (table) {
@@ -6,6 +6,8 @@ export function mapStringToTableName(table: string) {
             return debtors;
         case "video_ideas":
             return videoIdeas;
+        case "todos":
+            return todos;
         default:
             throw new Error(`Unknown table name: ${table}`);
     }

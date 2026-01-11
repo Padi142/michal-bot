@@ -17,3 +17,10 @@ export const videoIdeas = sqliteTable("video_ideas", {
     filmed: int({ mode: 'boolean' }).notNull().default(false),
     created: text().default(sql`(CURRENT_DATE)`),
 });
+
+export const todos = sqliteTable("todos", {
+    id: int().primaryKey({ autoIncrement: true }),
+    task: text().notNull(),
+    completed: int({ mode: 'boolean' }).notNull().default(false),
+    created: text().default(sql`(CURRENT_DATE)`),
+});
