@@ -21,6 +21,7 @@ export const videoIdeas = sqliteTable("video_ideas", {
 export const todos = sqliteTable("todos", {
     id: int().primaryKey({ autoIncrement: true }),
     task: text().notNull(),
+    category: text().default('general'),
     completed: int({ mode: 'boolean' }).notNull().default(false),
     created: text().default(sql`(CURRENT_DATE)`),
 });

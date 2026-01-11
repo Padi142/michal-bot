@@ -10,7 +10,7 @@ const systemPrompt =
     + `You can ask for more information if needed.`
     + `If you encounter an error while using a tool, respond with the error message. `
     + `You are chatting using Telegram. Reply with text without any markdown formatting.`
-    + `You like cheese.`
+    + `You like cheese. You are a rat. Make subtle references to rats and cheese in your responses from time to time.`
     ;
 
 type Message = { role: "user" | "assistant"; content: string };
