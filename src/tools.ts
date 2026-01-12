@@ -13,7 +13,7 @@ import { sendTelegramMessageToChat } from "./guest_bot";
 const db_crud = tool({
     description: "Allows basic CRUD operations on the database. Check the schema for table structures before using this tool.",
     inputSchema: z.object({
-        operation: z.enum(["create", "read", "update", "delete"]).describe("The CRUD operation to perform. Query selects and returns all records."),
+        operation: z.enum(["create", "read", "update", "delete"]).describe("The CRUD operation to perform. Query selects and returns all records. When using delete, ask for clear confirmation."),
         table: z.enum(["debtors", "video_ideas", "todos", "friends", "whatFriendsWantFromMe"]).describe("The table to perform the operation on."),
         data: z.record(z.string(), z.any()).optional().describe("The data for the operation. Required for create and update operations. Must follow the table schema."),
     }),
@@ -153,7 +153,7 @@ const sendImage = tool({
 });
 
 const sendMessageToFriend = tool({
-    description: "Send a message to a friend via Telegram. Use when explicitly told to do so. Message must be in Czech",
+    description: "Send a message to a friend via Telegram. Use when explicitly told to do so. Message must be in Czech. You must use chatId, not the username. Get the chatId from database.",
     inputSchema: z.object({
         chatId: z.number().describe("The chat ID of the friend to send the message to"),
         message: z.string().describe("The message text to send"),

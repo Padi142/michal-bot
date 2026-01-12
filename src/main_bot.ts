@@ -3,6 +3,31 @@ import { generateText, stepCountIs } from "ai";
 import { allTools } from "./tools";
 import { bot } from ".";
 
+
+export async function handleImageOCR(imageBuffer: Buffer, userPrompt?: string): Promise<string> {
+    try {
+        const prompt = userPrompt || "Extract and describe all text from this image. If there's no text, describe what you see.";
+
+        const result = await generateText({
+            model: mistral("pixtral-12b-2409"),
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: 'text', text: prompt },
+                        { type: 'image', image: imageBuffer }
+                    ]
+                }
+            ],
+        });
+
+        return result.text;
+    } catch (error) {
+        console.error("Failed to process image:", error);
+        return `Error processing image: ${error instanceof Error ? error.message : String(error)}`;
+    }
+}
+
 const systemPrompt =
     `You are a personal assistant called Michal. `
     + `You help me manage things I need to remember and keep track of in my database. `
@@ -14,7 +39,7 @@ const systemPrompt =
     + `Current date and time is: ${new Date().toISOString()}`
     ;
 
-type Message = { role: "user" | "assistant"; content: string };
+type Message = { role: "user" | "assistant"; content: string | Array<{ type: string; text?: string; image?: Buffer }> };
 
 // Store message history per chat (chatId -> messages array)
 const messageHistory = new Map<number, Message[]>();
@@ -40,7 +65,7 @@ async function loadMessageHistoryFromTelegram(chatId: number, limit: number = 10
     }
 }
 
-function addMessage(chatId: number, role: "user" | "assistant", content: string) {
+function addMessage(chatId: number, role: "user" | "assistant", content: string | Array<{ type: string; text?: string; image?: Buffer }>) {
     if (!messageHistory.has(chatId)) {
         messageHistory.set(chatId, []);
     }
@@ -63,7 +88,25 @@ async function getLastMessages(chatId: number, n: number): Promise<Message[]> {
     return history.slice(-n);
 }
 
-export async function generateResponseForOwner(chatId: number, message: string, contextSize: number = 10): Promise<string> {
+export async function generateResponseForOwner(
+    chatId: number,
+    message: string,
+    imageBuffer?: Buffer,
+    contextSize: number = 10
+): Promise<string> {
+    // If there's an image, first perform OCR
+    if (imageBuffer) {
+        const ocrResult = await handleImageOCR(imageBuffer, message || undefined);
+        // Add the user message with image to history
+        addMessage(chatId, "user", [
+            { type: 'text', text: message || "What's in this image?" },
+            { type: 'image', image: imageBuffer }
+        ]);
+        // Add OCR result as assistant message
+        addMessage(chatId, "assistant", ocrResult);
+        return ocrResult;
+    }
+
     // Add the user message to history
     addMessage(chatId, "user", message);
 
@@ -73,7 +116,7 @@ export async function generateResponseForOwner(chatId: number, message: string, 
     const result = await generateText({
         model: mistral("mistral-large-latest"),
         system: systemPrompt,
-        messages: contextMessages,
+        messages: contextMessages as any, // Type compatibility with AI SDK
         tools: allTools,
         stopWhen: stepCountIs(20),
     });
