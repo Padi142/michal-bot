@@ -32,6 +32,7 @@ export const friends = sqliteTable("friends", {
     chatId: int().notNull(),
     handle: text().notNull(),
     approved: int({ mode: 'boolean' }).notNull().default(false),
+    pronouns: text(),
     added: text().default(sql`(CURRENT_DATE)`),
 });
 
