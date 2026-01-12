@@ -1,4 +1,6 @@
-import { debtors, todos, videoIdeas } from "./schema";
+import { eq } from "drizzle-orm";
+import { debtors, friends, todos, videoIdeas, whatFriendsWantFromMe } from "./schema";
+import { db } from "./client";
 
 export function mapStringToTableName(table: string) {
     switch (table) {
@@ -8,6 +10,10 @@ export function mapStringToTableName(table: string) {
             return videoIdeas;
         case "todos":
             return todos;
+        case "friends":
+            return friends;
+        case "whatFriendsWantFromMe":
+            return whatFriendsWantFromMe;
         default:
             throw new Error(`Unknown table name: ${table}`);
     }
@@ -31,4 +37,9 @@ export function extractSchemaInfo(table: any): { tableName: string; columns: Rec
     }
 
     return { tableName, columns };
+}
+
+export const getUserFriendRecord = async (chatId: number) => {
+    const record = await db.select().from(friends).where(eq(friends.chatId, chatId)).limit(1);
+    return record[0];
 }

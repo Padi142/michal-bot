@@ -25,3 +25,20 @@ export const todos = sqliteTable("todos", {
     completed: int({ mode: 'boolean' }).notNull().default(false),
     created: text().default(sql`(CURRENT_DATE)`),
 });
+
+export const friends = sqliteTable("friends", {
+    id: int().primaryKey({ autoIncrement: true }),
+    name: text().notNull(),
+    chatId: int().notNull(),
+    handle: text().notNull(),
+    approved: int({ mode: 'boolean' }).notNull().default(false),
+    added: text().default(sql`(CURRENT_DATE)`),
+});
+
+export const whatFriendsWantFromMe = sqliteTable("what_friends_want_from_me", {
+    id: int().primaryKey({ autoIncrement: true }),
+    friendId: int().notNull(),
+    request: text().notNull(),
+    fulfilled: int({ mode: 'boolean' }).notNull().default(false),
+    created: text().default(sql`(CURRENT_DATE)`),
+});
