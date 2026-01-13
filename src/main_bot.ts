@@ -96,15 +96,12 @@ export async function generateResponseForOwner(
 ): Promise<string> {
     // If there's an image, first perform OCR
     if (imageBuffer) {
+        console.log(message)
         const ocrResult = await handleImageOCR(imageBuffer, message || undefined);
-        // Add the user message with image to history
-        addMessage(chatId, "user", [
-            { type: 'text', text: message || "What's in this image?" },
-            { type: 'image', image: imageBuffer }
-        ]);
         // Add OCR result as assistant message
-        addMessage(chatId, "assistant", ocrResult);
-        return ocrResult;
+        console.log("OCR Result:", ocrResult);
+        addMessage(chatId, "user", `User sent an image containing: ${ocrResult}`);
+        // return ocrResult;
     }
 
     // Add the user message to history

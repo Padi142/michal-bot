@@ -3,7 +3,7 @@ import { generateText, stepCountIs } from "ai";
 import { bot } from ".";
 import { getUserFriendRecord } from "./db/utils";
 import { guestTools } from "./tools";
-import { sendTelegramMarkdownToOwner, sendTelegramMessageToOwner } from "./main_bot";
+import { sendTelegramMarkdownToOwner, sendTelegramMessageToOwner, handleImageOCR } from "./main_bot";
 
 
 const guestSystemPrompt =
@@ -34,16 +34,25 @@ async function getGuestLastMessages(chatId: number, n: number): Promise<GuestMes
     return history.slice(-n);
 }
 
-export async function generateResponseForGuest(chatId: number, userMessage: string, username: string): Promise<string> {
+export async function generateResponseForGuest(chatId: number, userMessage: string, username: string, imageBuffer?: Buffer): Promise<string> {
     console.log(`Generating response for guest chatId=${chatId}, message=${userMessage}`);
+    const friendRecord = await getUserFriendRecord(chatId);
 
-    // Add user message to history
-    await addGuestMessage(chatId, "user", userMessage);
+    // If there's an image, perform OCR (approval already checked in index.ts)
+    if (imageBuffer) {
+        console.log("Approved guest sent an image, processing with OCR...");
+        const ocrResult = await handleImageOCR(imageBuffer, userMessage || undefined);
+        console.log("Guest image OCR Result:", ocrResult);
+        // Add OCR result to context
+        await addGuestMessage(chatId, "user", `User sent an image containing: ${ocrResult}`);
+    } else {
+        // Add user message to history
+        await addGuestMessage(chatId, "user", userMessage);
+    }
 
     // Get last messages for context
     const lastMessages = await getGuestLastMessages(chatId, 10);
 
-    const friendRecord = await getUserFriendRecord(chatId);
 
     if (!friendRecord || !friendRecord.approved) {
         console.log(`Guest chatId=${chatId} is not an approved friend.`);

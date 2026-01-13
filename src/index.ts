@@ -11,7 +11,7 @@ export const bot = new Bot(Bun.env.BOT_TOKEN!)
         console.log("Received message:", context.text);
 
         const chatId = context.chatId;
-        const userMessage = context.text || "";
+        let userMessage = context.text || "";
         const photos = context.photo || [];
 
         if (chatId + '' === Bun.env.OWNER_CHAT_ID) {
@@ -27,6 +27,8 @@ export const bot = new Bot(Bun.env.BOT_TOKEN!)
                     await sendTelegramMessageToOwner("Sorry, I couldn't process the image.");
                     return;
                 }
+
+                userMessage = context.caption || userMessage;
             }
 
             const botOwnerResponse = await generateResponseForOwner(chatId, userMessage, imageBuffer);
@@ -35,14 +37,36 @@ export const bot = new Bot(Bun.env.BOT_TOKEN!)
             return;
         }
 
-        // Guest users: ignore images
+        // Handle images for guest users - check approval first
+        let imageBuffer: Buffer | undefined;
         if (photos.length > 0) {
-            console.log(`Guest sent ${photos.length} photo(s). Ignoring attachments for non-owner users.`);
+            console.log(`Guest sent ${photos.length} photo(s). Checking approval status...`);
+
+            // Check if user is approved before processing images
+            const { getUserFriendRecord } = await import("./db/utils");
+            const friendRecord = await getUserFriendRecord(chatId);
+
+            if (friendRecord?.approved) {
+                console.log(`Approved friend - processing image...`);
+                await context.sendChatAction("upload_photo");
+                imageBuffer = (await downloadTelegramImage(photos)) || undefined;
+
+                if (!imageBuffer) {
+                    await sendTelegramMessageToChat(chatId, "Sorry, I couldn't process the image.");
+                    return;
+                }
+
+                userMessage = context.caption || userMessage;
+            } else {
+                console.log(`Non-approved user sent image, ignoring image.`);
+                // Ignore the image, only use caption if present
+                userMessage = context.caption || userMessage || "";
+            }
         }
 
         await context.sendChatAction("typing");
         const userName = context.from?.username || "unknown";
-        const botResponse = await generateResponseForGuest(chatId, userMessage, userName);
+        const botResponse = await generateResponseForGuest(chatId, userMessage, userName, imageBuffer);
         await sendTelegramMessageToChat(chatId, botResponse);
     })
     .onStart(({ info }) => console.log(`✨ Bot ${info.username} was started!`));
