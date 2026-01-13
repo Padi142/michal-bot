@@ -9,6 +9,7 @@ import * as schema from "./db/schema";
 import Sandbox from "@e2b/code-interpreter";
 import { sendTelegramImageToOwner, sendTelegramMarkdownToOwner, sendTelegramMessageToOwner } from "./main_bot";
 import { sendTelegramMessageToChat } from "./guest_bot";
+import { webSearch } from "@exalabs/ai-sdk";
 
 const db_crud = tool({
     description: "Allows basic CRUD operations on the database. Check the schema for table structures before using this tool.",
@@ -179,6 +180,7 @@ export const allTools = {
     sendMessage,
     sendImage,
     sendMessageToFriend,
+    webSearch: webSearch(),
 };
 
 const guestCreateFriendRequest = tool({
