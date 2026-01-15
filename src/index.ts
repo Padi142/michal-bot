@@ -8,6 +8,21 @@ import { initializeScheduler } from "./scheduler";
 export const bot = new Bot(Bun.env.BOT_TOKEN!)
     .command("start", async (context) => {
         context.send("AHOJ! Jsi kamarád??")
+    }).command('model', async (context) => {
+        const chatId = context.chatId;
+        if (chatId + '' !== Bun.env.OWNER_CHAT_ID) {
+            return;
+        }
+        const args = context.text?.split(' ') || [];
+        if (args.length < 2) {
+            await sendTelegramMessageToChat(chatId, "Please provide a model name. Usage: /model <model_name>");
+            return;
+        }
+
+        const modelName = args[1];
+        Bun.env.DEFAULT_MODEL = modelName;
+        await sendTelegramMessageToChat(chatId, `Default model set to ${modelName}`);
+
     }).on("message", async (context) => {
         console.log("Received message:", context.text);
 
@@ -32,9 +47,14 @@ export const bot = new Bot(Bun.env.BOT_TOKEN!)
                 userMessage = context.caption || userMessage;
             }
 
-            const botOwnerResponse = await generateResponseForOwner(chatId, userMessage, imageBuffer);
-            await sendTelegramMessageToOwner(botOwnerResponse);
+            try {
 
+                const botOwnerResponse = await generateResponseForOwner(chatId, userMessage, imageBuffer);
+                await sendTelegramMessageToOwner(botOwnerResponse);
+            } catch (error) {
+                console.error("Error generating response for owner:", error);
+                await sendTelegramMessageToOwner("Error, " + (error instanceof Error ? error.message : String(error)));
+            }
             return;
         }
 

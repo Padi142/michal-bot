@@ -23,6 +23,7 @@
     "@e2b/code-interpreter": "^2.3.3",
     "@exalabs/ai-sdk": "^1.0.5",
     "@libsql/client": "^0.17.0",
+    "@openrouter/ai-sdk-provider": "^1.5.4",
     "ai": "^6.0.27",
     "croner": "^9.1.0",
     "dotenv": "^17.2.3",

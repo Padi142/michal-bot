@@ -1,7 +1,8 @@
 import { mistral } from "@ai-sdk/mistral";
-import { generateText, stepCountIs } from "ai";
+import { generateText, stepCountIs, type LanguageModel } from "ai";
 import { allTools } from "./tools";
 import { bot } from ".";
+import { openrouter } from "@openrouter/ai-sdk-provider";
 
 
 export async function handleImageOCR(imageBuffer: Buffer, userPrompt?: string): Promise<string> {
@@ -111,7 +112,7 @@ export async function generateResponseForOwner(
     const contextMessages = await getLastMessages(chatId, contextSize);
 
     const result = await generateText({
-        model: mistral("mistral-large-latest"),
+        model: getLanguageModel(),
         system: systemPrompt,
         messages: contextMessages as any, // Type compatibility with AI SDK
         tools: allTools,
@@ -179,4 +180,14 @@ export async function sendTelegramImageToOwner(imageUrl: string, caption?: strin
             error: error instanceof Error ? error.message : String(error)
         };
     }
+}
+
+function getLanguageModel(): LanguageModel {
+    const modelName = Bun.env.DEFAULT_MODEL || "mistral-large-latest";
+
+    if (modelName.includes("mistral")) {
+        return mistral(modelName);
+    }
+
+    return openrouter(modelName);
 }
