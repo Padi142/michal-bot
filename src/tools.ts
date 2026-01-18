@@ -22,9 +22,7 @@ const db_crud = tool({
         data: z.record(z.string(), z.any()).optional().describe("The data for the operation. Required for create and update operations. Must follow the table schema."),
     }),
     execute: async ({ operation, table, data }) => {
-
         try {
-
             console.log(`Running db_crud tool with input:`, { operation, table, data });
 
             switch (operation) {
@@ -61,15 +59,12 @@ const db_crud = tool({
                 default:
                     throw new Error(`Unknown operation: ${operation}`);
             }
-
         } catch (error) {
             console.error("Error in db_crud tool:", error);
             return { error: error instanceof Error ? error.message : String(error) };
         }
     }
 });
-
-
 
 const getDbSchema = tool({
     description: "Get the database schema",
@@ -130,7 +125,6 @@ const sendMessage = tool({
     }),
     execute: async ({ message, imageUrl, caption }) => {
         try {
-
             if (imageUrl) {
                 console.log(`Sending image:`, imageUrl);
                 const result = await sendTelegramImageToOwner(imageUrl, caption || message);
@@ -159,7 +153,6 @@ const sendMessageToFriend = tool({
     }),
     execute: async ({ chatId, message, imageUrl, caption }) => {
         try {
-
             if (imageUrl) {
                 console.log(`Sending image to friend chatId=${chatId}:`, imageUrl);
                 const result = await sendTelegramImageToChat(chatId, imageUrl, caption || message);
@@ -180,77 +173,73 @@ const sendMessageToFriend = tool({
     }
 });
 
-const scheduleReminder = tool({
-    description: "Schedule a reminder message to be sent at a specific future time. All times are in Vienna timezone (GMT+1). IMPORTANT: When generating ISO datetime strings, do NOT include 'Z' suffix. Use format like '2026-01-17T09:00:00' (no timezone) or add '+01:00' for Vienna time.",
+// Unified Cron Job Tool
+const manageCronJobs = tool({
+    description: "Manage cron jobs for scheduled messages. Supports adding, removing, and listing jobs. All times are in Vienna timezone (GMT+1). Use ISO datetime strings (e.g., '2026-01-17T09:00:00') or relative time (e.g., 'in 2 hours').",
     inputSchema: z.object({
-        chatId: z.number().optional().describe("The chat ID to send the reminder to. If not provided, defaults to owner."),
-        message: z.string().describe("The reminder message text"),
-        scheduledTime: z.string().describe("When to send the reminder. Can be an ISO datetime string (e.g., '2026-01-17T09:00:00'), or relative time like 'in 2 hours', 'in 3 days', etc. Do NOT use 'Z' suffix."),
+        action: z.enum(["add", "remove", "list"]).describe("The action to perform: add, remove, or list cron jobs."),
+        chatId: z.number().optional().describe("The chat ID to send the reminder to. Required for 'add' action. Defaults to owner if not provided."),
+        message: z.string().optional().describe("The reminder message text. Required for 'add' action."),
+        scheduledTime: z.string().optional().describe("When to send the reminder. Required for 'add' action. Use ISO datetime (e.g., 2026-01-17T09:00:00) or relative time (e.g., 'in 2 hours')."),
+        id: z.number().optional().describe("The ID of the scheduled message to cancel. Required for 'remove' action."),
     }),
-    execute: async ({ chatId, message, scheduledTime }) => {
+    execute: async ({ action, chatId, message, scheduledTime, id }) => {
         try {
-            const targetChatId = chatId || parseInt(Bun.env.OWNER_CHAT_ID || "0", 10);
-            let fireAt: Date;
+            switch (action) {
+                case "add": {
+                    if (!message || !scheduledTime) {
+                        throw new Error("Both 'message' and 'scheduledTime' are required for 'add' action.");
+                    }
+                    const targetChatId = chatId || parseInt(Bun.env.OWNER_CHAT_ID || "0", 10);
+                    let fireAt: Date;
 
-            const relativeParsed = parseRelativeTime(scheduledTime);
-            if (relativeParsed) {
-                fireAt = relativeParsed;
-            } else {
-                const viennaParsed = parseViennaTime(scheduledTime);
-                if (viennaParsed) {
-                    fireAt = viennaParsed;
-                } else {
-                    throw new Error(`Invalid scheduled time: ${scheduledTime}. Use ISO datetime (e.g., 2026-01-17T09:00:00) or relative time (e.g., 'in 2 hours').`);
+                    const relativeParsed = parseRelativeTime(scheduledTime);
+                    if (relativeParsed) {
+                        fireAt = relativeParsed;
+                    } else {
+                        const viennaParsed = parseViennaTime(scheduledTime);
+                        if (viennaParsed) {
+                            fireAt = viennaParsed;
+                        } else {
+                            throw new Error(`Invalid scheduled time: ${scheduledTime}. Use ISO datetime (e.g., 2026-01-17T09:00:00) or relative time (e.g., 'in 2 hours').`);
+                        }
+                    }
+
+                    const result = await scheduleMessage(targetChatId, message, fireAt);
+                    return {
+                        success: true,
+                        scheduledFor: result.scheduledFor,
+                        id: result.id,
+                        message: `Reminder scheduled for ${fireAt.toLocaleString('en-GB', { timeZone: 'Europe/Vienna' })}`
+                    };
                 }
+
+                case "remove": {
+                    if (!id) {
+                        throw new Error("'id' is required for 'remove' action.");
+                    }
+                    const success = await cancelScheduledMessage(id);
+                    return { success, message: success ? `Reminder ${id} cancelled` : `Reminder ${id} not found` };
+                }
+
+                case "list": {
+                    const reminders = await getPendingScheduledMessages();
+                    return {
+                        count: reminders.length,
+                        reminders: reminders.map(r => ({
+                            id: r.id,
+                            chatId: r.chatId,
+                            message: r.message,
+                            scheduledFor: r.scheduledFor,
+                        }))
+                    };
+                }
+
+                default:
+                    throw new Error(`Unknown action: ${action}`);
             }
-
-            const result = await scheduleMessage(targetChatId, message, fireAt);
-            return {
-                success: true,
-                scheduledFor: result.scheduledFor,
-                id: result.id,
-                message: `Reminder scheduled for ${fireAt.toLocaleString('en-GB', { timeZone: 'Europe/Vienna' })}`
-            };
         } catch (error) {
-            console.error("Error in scheduleReminder tool:", error);
-            return { error: error instanceof Error ? error.message : String(error) };
-        }
-    }
-});
-
-const cancelReminder = tool({
-    description: "Cancel a scheduled reminder by its ID.",
-    inputSchema: z.object({
-        id: z.number().describe("The ID of the scheduled message to cancel."),
-    }),
-    execute: async ({ id }) => {
-        try {
-            const success = await cancelScheduledMessage(id);
-            return { success, message: success ? `Reminder ${id} cancelled` : `Reminder ${id} not found` };
-        } catch (error) {
-            console.error("Error in cancelReminder tool:", error);
-            return { error: error instanceof Error ? error.message : String(error) };
-        }
-    }
-});
-
-const listPendingReminders = tool({
-    description: "List all pending scheduled reminders.",
-    inputSchema: z.object({}),
-    execute: async () => {
-        try {
-            const reminders = await getPendingScheduledMessages();
-            return {
-                count: reminders.length,
-                reminders: reminders.map(r => ({
-                    id: r.id,
-                    chatId: r.chatId,
-                    message: r.message,
-                    scheduledFor: r.scheduledFor,
-                }))
-            };
-        } catch (error) {
-            console.error("Error in listPendingReminders tool:", error);
+            console.error("Error in manageCronJobs tool:", error);
             return { error: error instanceof Error ? error.message : String(error) };
         }
     }
@@ -262,9 +251,7 @@ export const allTools = {
     runCode,
     sendMessage,
     sendMessageToFriend,
-    scheduleReminder,
-    cancelReminder,
-    listPendingReminders,
+    manageCronJobs, // Unified cron tool
     webSearch: webSearch(),
 };
 
@@ -311,7 +298,6 @@ const guestGetTheirRequests = tool({
         }
     }
 });
-
 
 const guestCreateRequestFromFriend = tool({
     description: "Allows my friends to create requests for me. Can be anything from that I owe them something or they want to remind me something.",
