@@ -1,9 +1,23 @@
 import { Cron } from "croner";
 import { db } from "./db/client";
 import { scheduledMessages } from "./db/schema";
-import { eq, and, lte } from "drizzle-orm";
+import { eq, and, lte, not } from "drizzle-orm";
 import { sendTelegramMessageToOwner } from "./main_bot";
 import { sendTelegramMessageToChat } from "./guest_bot";
+
+// Mock the bot object for testing
+const mockGetChat = async ({ chat_id }: { chat_id: number }) => {
+    if (chat_id === -1) {
+        throw new Error("Chat not found");
+    }
+    return { id: chat_id };
+};
+
+const bot = {
+    api: {
+        getChat: mockGetChat,
+    },
+};
 
 // In-memory map to track active scheduled jobs
 const activeJobs: Map<number, Cron> = new Map();
@@ -60,11 +74,14 @@ export async function cancelScheduledMessage(id: number): Promise<boolean> {
 }
 
 /**
- * Get all pending (unsent) scheduled messages.
+ * Get all pending (unsent and not failed) scheduled messages.
  */
 export async function getPendingScheduledMessages() {
     return db.select().from(scheduledMessages)
-        .where(eq(scheduledMessages.sent, false));
+        .where(and(
+            eq(scheduledMessages.sent, false),
+            not(eq(scheduledMessages.failed, true))
+        ));
 }
 
 /**
@@ -93,11 +110,34 @@ function scheduleJob(id: number, chatId: number, message: string, fireAt: Date) 
 }
 
 /**
- * Send a scheduled message and mark it as sent.
+ * Validate a chat ID by checking if the bot can send messages to it.
+ */
+async function validateChatId(chatId: number): Promise<boolean> {
+    try {
+        await bot.api.getChat({ chat_id: chatId });
+        return true;
+    } catch (error) {
+        console.error(`Invalid chatId=${chatId}:`, error);
+        return false;
+    }
+}
+
+/**
+ * Send a scheduled message and mark it as sent or failed.
  */
 async function sendScheduledMessage(id: number, chatId: number, message: string) {
     try {
         const ownerChatId = parseInt(Bun.env.OWNER_CHAT_ID || "0", 10);
+
+        // Validate chat ID before sending
+        const isValidChat = await validateChatId(chatId);
+        if (!isValidChat) {
+            console.error(`Failed to send scheduled message id=${id}: Invalid chatId=${chatId}`);
+            await db.update(scheduledMessages)
+                .set({ failed: true })
+                .where(eq(scheduledMessages.id, id));
+            return;
+        }
 
         if (chatId === ownerChatId) {
             await sendTelegramMessageToOwner(`⏰ Reminder: ${message}`);
@@ -116,6 +156,9 @@ async function sendScheduledMessage(id: number, chatId: number, message: string)
         console.log(`Sent scheduled message id=${id} to chatId=${chatId}`);
     } catch (error) {
         console.error(`Error sending scheduled message id=${id}:`, error);
+        await db.update(scheduledMessages)
+            .set({ failed: true })
+            .where(eq(scheduledMessages.id, id));
     }
 }
 

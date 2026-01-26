@@ -50,5 +50,6 @@ export const scheduledMessages = sqliteTable("scheduled_messages", {
     message: text().notNull(),
     scheduledFor: text().notNull(), // ISO 8601 datetime string
     sent: int({ mode: 'boolean' }).notNull().default(false),
+    failed: int({ mode: 'boolean' }).notNull().default(false),
     created: text().default(sql`(CURRENT_DATE)`),
 });
