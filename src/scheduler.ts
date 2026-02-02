@@ -3,43 +3,58 @@ import { db } from "./db/client";
 import { scheduledMessages } from "./db/schema";
 import { eq, and, lte } from "drizzle-orm";
 import { sendTelegramMessageToOwner } from "./main_bot";
-import { sendTelegramMessageToChat } from "./guest_bot";
 
 // In-memory map to track active scheduled jobs
 const activeJobs: Map<number, Cron> = new Map();
+
+function getOwnerChatId(): number {
+    const rawChatId = Bun.env.OWNER_CHAT_ID;
+    const ownerChatId = rawChatId ? parseInt(rawChatId, 10) : NaN;
+
+    if (!Number.isFinite(ownerChatId) || ownerChatId <= 0) {
+        throw new Error("OWNER_CHAT_ID is not set or invalid.");
+    }
+
+    return ownerChatId;
+}
 
 /**
  * Schedule a message to be sent at a specific time.
  * Returns the created scheduled message record.
  */
 export async function scheduleMessage(
-    chatId: number,
     message: string,
     scheduledFor: Date
 ): Promise<{ id: number; chatId: number; message: string; scheduledFor: string }> {
-    const isoTime = scheduledFor.toISOString();
+    try {
+        const isoTime = scheduledFor.toISOString();
+        const ownerChatId = getOwnerChatId();
 
-    // Insert into database
-    const result = await db.insert(scheduledMessages).values({
-        chatId,
-        message,
-        scheduledFor: isoTime,
-        sent: false,
-    }).returning();
+        // Insert into database
+        const result = await db.insert(scheduledMessages).values({
+            chatId: ownerChatId,
+            message,
+            scheduledFor: isoTime,
+            sent: false,
+        }).returning();
 
-    const record = result[0]!;
+        const record = result[0]!;
 
-    console.log(`Scheduled message id=${record.id} for ${isoTime}`);
+        console.log(`Scheduled message id=${record.id} for ${isoTime} (owner chatId=${ownerChatId})`);
 
-    // Schedule the cron job
-    scheduleJob(record.id, chatId, message, scheduledFor);
+        // Schedule the cron job
+        scheduleJob(record.id, message, scheduledFor);
 
-    return {
-        id: record.id,
-        chatId: record.chatId,
-        message: record.message,
-        scheduledFor: isoTime,
-    };
+        return {
+            id: record.id,
+            chatId: record.chatId,
+            message: record.message,
+            scheduledFor: isoTime,
+        };
+    } catch (error) {
+        console.error("Error in scheduleMessage:", error);
+        throw error;
+    }
 }
 
 /**
@@ -70,7 +85,7 @@ export async function getPendingScheduledMessages() {
 /**
  * Create a cron job for a scheduled message.
  */
-function scheduleJob(id: number, chatId: number, message: string, fireAt: Date) {
+function scheduleJob(id: number, message: string, fireAt: Date) {
     const now = new Date();
     const viennaTime = fireAt.toLocaleString('en-GB', { timeZone: 'Europe/Vienna' });
     const nowViennaTime = now.toLocaleString('en-GB', { timeZone: 'Europe/Vienna' });
@@ -80,12 +95,12 @@ function scheduleJob(id: number, chatId: number, message: string, fireAt: Date) 
     // Don't schedule if already in the past
     if (fireAt <= now) {
         console.log(`Scheduled message id=${id} is in the past, sending immediately`);
-        sendScheduledMessage(id, chatId, message);
+        sendScheduledMessage(id, message);
         return;
     }
 
     const job = new Cron(fireAt, { timezone: 'Europe/Vienna' }, async () => {
-        await sendScheduledMessage(id, chatId, message);
+        await sendScheduledMessage(id, message);
     });
 
     activeJobs.set(id, job);
@@ -95,15 +110,10 @@ function scheduleJob(id: number, chatId: number, message: string, fireAt: Date) 
 /**
  * Send a scheduled message and mark it as sent.
  */
-async function sendScheduledMessage(id: number, chatId: number, message: string) {
+async function sendScheduledMessage(id: number, message: string) {
     try {
-        const ownerChatId = parseInt(Bun.env.OWNER_CHAT_ID || "0", 10);
-
-        if (chatId === ownerChatId) {
-            await sendTelegramMessageToOwner(`⏰ Reminder: ${message}`);
-        } else {
-            await sendTelegramMessageToChat(chatId, `⏰ Reminder: ${message}`);
-        }
+        const ownerChatId = getOwnerChatId();
+        await sendTelegramMessageToOwner(`⏰ Reminder: ${message}`);
 
         // Mark as sent in database
         await db.update(scheduledMessages)
@@ -113,7 +123,7 @@ async function sendScheduledMessage(id: number, chatId: number, message: string)
         // Remove from active jobs
         activeJobs.delete(id);
 
-        console.log(`Sent scheduled message id=${id} to chatId=${chatId}`);
+        console.log(`Sent scheduled message id=${id} to chatId=${ownerChatId}`);
     } catch (error) {
         console.error(`Error sending scheduled message id=${id}:`, error);
     }
@@ -129,9 +139,10 @@ export async function initializeScheduler() {
     const pendingMessages = await getPendingScheduledMessages();
     console.log(`Found ${pendingMessages.length} pending scheduled messages`);
 
+    getOwnerChatId();
     for (const msg of pendingMessages) {
         const fireAt = new Date(msg.scheduledFor);
-        scheduleJob(msg.id, msg.chatId, msg.message, fireAt);
+        scheduleJob(msg.id, msg.message, fireAt);
     }
 
     console.log("Scheduler initialized");

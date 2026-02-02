@@ -12,7 +12,6 @@ import { sendTelegramImageToOwner, sendTelegramMarkdownToOwner, sendTelegramMess
 import { sendTelegramMessageToChat, sendTelegramImageToChat } from "./guest_bot";
 import { webSearch } from "@exalabs/ai-sdk";
 import { scheduleMessage, cancelScheduledMessage, getPendingScheduledMessages } from "./scheduler";
-import { Cron } from "croner";
 
 const db_crud = tool({
     description: "Allows basic CRUD operations on the database. Check the schema for table structures before using this tool.",
@@ -175,10 +174,10 @@ const sendMessageToFriend = tool({
 
 // Unified Cron Job Tool
 const manageCronJobs = tool({
-    description: "Manage cron jobs for scheduled messages. Supports adding, removing, and listing jobs. All times are in Vienna timezone (GMT+1). Use ISO datetime strings (e.g., '2026-01-17T09:00:00') or relative time (e.g., 'in 2 hours').",
+    description: "Manage cron jobs for scheduled messages (owner only). Supports adding, removing, and listing jobs. All times are in Vienna timezone (GMT+1). Use ISO datetime strings (e.g., '2026-01-17T09:00:00') or relative time (e.g., 'in 2 hours'). Reminders always go to the owner chat ID.",
     inputSchema: z.object({
         action: z.enum(["add", "remove", "list"]).describe("The action to perform: add, remove, or list cron jobs."),
-        chatId: z.number().optional().describe("The chat ID to send the reminder to. Required for 'add' action. Defaults to owner if not provided."),
+        chatId: z.number().optional().describe("Deprecated. Ignored because reminders always go to the owner chat ID."),
         message: z.string().optional().describe("The reminder message text. Required for 'add' action."),
         scheduledTime: z.string().optional().describe("When to send the reminder. Required for 'add' action. Use ISO datetime (e.g., 2026-01-17T09:00:00) or relative time (e.g., 'in 2 hours')."),
         id: z.number().optional().describe("The ID of the scheduled message to cancel. Required for 'remove' action."),
@@ -190,7 +189,9 @@ const manageCronJobs = tool({
                     if (!message || !scheduledTime) {
                         throw new Error("Both 'message' and 'scheduledTime' are required for 'add' action.");
                     }
-                    const targetChatId = chatId || parseInt(Bun.env.OWNER_CHAT_ID || "0", 10);
+                    if (chatId) {
+                        console.log(`Ignoring provided chatId=${chatId}; reminders always go to OWNER_CHAT_ID.`);
+                    }
                     let fireAt: Date;
 
                     const relativeParsed = parseRelativeTime(scheduledTime);
@@ -205,7 +206,7 @@ const manageCronJobs = tool({
                         }
                     }
 
-                    const result = await scheduleMessage(targetChatId, message, fireAt);
+                    const result = await scheduleMessage(message, fireAt);
                     return {
                         success: true,
                         scheduledFor: result.scheduledFor,
@@ -224,11 +225,15 @@ const manageCronJobs = tool({
 
                 case "list": {
                     const reminders = await getPendingScheduledMessages();
+                    const ownerChatId = parseInt(Bun.env.OWNER_CHAT_ID || "", 10);
+                    if (!Number.isFinite(ownerChatId) || ownerChatId <= 0) {
+                        throw new Error("OWNER_CHAT_ID is not set or invalid.");
+                    }
                     return {
                         count: reminders.length,
                         reminders: reminders.map(r => ({
                             id: r.id,
-                            chatId: r.chatId,
+                            chatId: ownerChatId,
                             message: r.message,
                             scheduledFor: r.scheduledFor,
                         }))
