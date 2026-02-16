@@ -17,7 +17,7 @@ const db_crud = tool({
     description: "Allows basic CRUD operations on the database. Check the schema for table structures before using this tool.",
     inputSchema: z.object({
         operation: z.enum(["create", "read", "update", "delete"]).describe("The CRUD operation to perform. Query selects and returns all records. When using delete, ask for clear confirmation."),
-        table: z.enum(["debtors", "video_ideas", "todos", "friends", "whatFriendsWantFromMe", "scheduledMessages"]).describe("The table to perform the operation on."),
+        table: z.enum(["debtors", "video_ideas", "todos", "friends", "whatFriendsWantFromMe", "scheduledMessages", "fridgeItems"]).describe("The table to perform the operation on."),
         data: z.record(z.string(), z.any()).optional().describe("The data for the operation. Required for create and update operations. Must follow the table schema."),
     }),
     execute: async ({ operation, table, data }) => {
@@ -76,6 +76,7 @@ const getDbSchema = tool({
                 videoIdeas: extractSchemaInfo(schema.videoIdeas),
                 todos: extractSchemaInfo(schema.todos),
                 friends: extractSchemaInfo(schema.friends),
+                fridgeItems: extractSchemaInfo(schema.fridgeItems),
                 whatFriendsWantFromMe: extractSchemaInfo(schema.whatFriendsWantFromMe),
                 scheduledMessages: extractSchemaInfo(schema.scheduledMessages),
             };

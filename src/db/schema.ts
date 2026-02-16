@@ -52,3 +52,12 @@ export const scheduledMessages = sqliteTable("scheduled_messages", {
     sent: int({ mode: 'boolean' }).notNull().default(false),
     created: text().default(sql`(CURRENT_DATE)`),
 });
+
+export const fridgeItems = sqliteTable("fridge_items", {
+    id: int().primaryKey({ autoIncrement: true }),
+    itemName: text().notNull(),
+    quantity: int().notNull().default(1),
+    expiresOn: text(), // ISO 8601 date string
+    added: text().default(sql`(CURRENT_DATE)`),
+});
+
