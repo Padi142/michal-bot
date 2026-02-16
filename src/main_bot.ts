@@ -29,98 +29,159 @@ export async function handleImageOCR(imageBuffer: Buffer, userPrompt?: string): 
     }
 }
 
-const systemPrompt =
+type Message = { role: "user" | "assistant"; content: string };
+
+const baseSystemPrompt =
     `You are a personal assistant called Michal. `
     + `You help me manage things I need to remember and keep track of in my database. `
     + `Use the tools provided to complete my requests. `
-    + `You can ask for more information if needed.`
-    + `If you encounter an error while using a tool, respond with the error message. You are allowed to use the tools as many times as needed to complete the request. `
-    + `You are chatting using Telegram. Reply with text without any markdown formatting.`
-    + `You like cheese. You are a rat. Make subtle references to rats and cheese in your responses from time to time.`
-    + `Current date and time is: ${new Date().toISOString()}`
-    ;
+    + `You can ask for more information if needed. `
+    + `If you encounter an error while using a tool, respond with the error message. `
+    + `You are allowed to use the tools as many times as needed to complete the request. `
+    + `You are chatting using Telegram. Reply with text without any markdown formatting. `
+    + `You like cheese. You are a rat. Make subtle references to rats and cheese in your responses from time to time.`;
 
-type Message = { role: "user" | "assistant"; content: string | Array<{ type: string; text?: string; image?: Buffer }> };
+const DEFAULT_CONTEXT_SIZE = 12;
+const MIN_CONTEXT_SIZE = 1;
+const MAX_CONTEXT_SIZE = 100;
+const MAX_STORED_MESSAGES_PER_CHAT = 400;
 
 // Store message history per chat (chatId -> messages array)
-const messageHistory = new Map<number, Message[]>();
+const ownerMessageHistory = new Map<number, Message[]>();
+const ownerContextSizeByChat = new Map<number, number>();
 
-async function loadMessageHistoryFromTelegram(chatId: number, limit: number = 10): Promise<Message[]> {
+function getDefaultContextSize(): number {
+    const rawValue = Bun.env.OWNER_CONTEXT_SIZE;
+    const parsed = rawValue ? Number.parseInt(rawValue, 10) : NaN;
+
+    if (!Number.isInteger(parsed)) {
+        return DEFAULT_CONTEXT_SIZE;
+    }
+
+    return Math.min(MAX_CONTEXT_SIZE, Math.max(MIN_CONTEXT_SIZE, parsed));
+}
+
+function addOwnerMessage(chatId: number, role: "user" | "assistant", content: string) {
+    const trimmedContent = content.trim();
+    if (!trimmedContent) {
+        return;
+    }
+
+    if (!ownerMessageHistory.has(chatId)) {
+        ownerMessageHistory.set(chatId, []);
+    }
+
+    const history = ownerMessageHistory.get(chatId)!;
+    history.push({ role, content: trimmedContent });
+
+    if (history.length > MAX_STORED_MESSAGES_PER_CHAT) {
+        const overflow = history.length - MAX_STORED_MESSAGES_PER_CHAT;
+        history.splice(0, overflow);
+    }
+}
+
+function getLastOwnerMessages(chatId: number): Message[] {
+    const history = ownerMessageHistory.get(chatId) || [];
+    const contextSize = getOwnerContextSize(chatId);
+    return history.slice(-contextSize);
+}
+
+async function loadSoulPrompt(): Promise<string> {
     try {
-        // Get recent updates to reconstruct conversation history
-        const updates = await bot.api.getUpdates({ limit: 100, offset: -100 });
-
-        const messages: Message[] = [];
-        for (const update of updates) {
-            if (update.message && update.message.chat.id === chatId && update.message.text) {
-                const isBot = update.message.from?.is_bot ?? false;
-                const role = isBot ? "assistant" : "user";
-                messages.push({ role, content: update.message.text });
-            }
+        const soulFile = Bun.file("SOUL.md");
+        if (!(await soulFile.exists())) {
+            return "";
         }
 
-        return messages.slice(-limit);
+        const content = (await soulFile.text()).trim();
+        return content;
     } catch (error) {
-        console.error("Failed to load message history from Telegram:", error);
-        return [];
+        console.error("Failed to load SOUL.md:", error);
+        return "";
     }
 }
 
-function addMessage(chatId: number, role: "user" | "assistant", content: string | Array<{ type: string; text?: string; image?: Buffer }>) {
-    if (!messageHistory.has(chatId)) {
-        messageHistory.set(chatId, []);
+async function buildOwnerSystemPrompt(): Promise<string> {
+    const soulPrompt = await loadSoulPrompt();
+    const promptSections = [
+        baseSystemPrompt,
+        `Current date and time is: ${new Date().toISOString()}`,
+    ];
+
+    if (soulPrompt) {
+        promptSections.push(`SOUL.md instructions:\n${soulPrompt}`);
     }
-    messageHistory.get(chatId)!.push({ role, content });
+
+    return promptSections.join("\n\n");
 }
 
-async function getLastMessages(chatId: number, n: number): Promise<Message[]> {
-    let history = messageHistory.get(chatId) || [];
+export function getOwnerContextSize(chatId: number): number {
+    return ownerContextSizeByChat.get(chatId) ?? getDefaultContextSize();
+}
 
-    // If we have no history in memory, try to load from Telegram
-    if (history.length === 0) {
-        console.log("Loading message history from Telegram...");
-        const telegramHistory = await loadMessageHistoryFromTelegram(chatId, n);
-        if (telegramHistory.length > 0) {
-            messageHistory.set(chatId, telegramHistory);
-            history = telegramHistory;
-        }
+export function setOwnerContextSize(chatId: number, contextSize: number): { success: true; contextSize: number } | { success: false; error: string } {
+    if (!Number.isInteger(contextSize)) {
+        return { success: false, error: "Context size must be an integer." };
     }
 
-    return history.slice(-n);
+    if (contextSize < MIN_CONTEXT_SIZE || contextSize > MAX_CONTEXT_SIZE) {
+        return {
+            success: false,
+            error: `Context size must be between ${MIN_CONTEXT_SIZE} and ${MAX_CONTEXT_SIZE}.`,
+        };
+    }
+
+    ownerContextSizeByChat.set(chatId, contextSize);
+    return { success: true, contextSize };
+}
+
+export function clearOwnerContext(chatId: number): number {
+    const previousLength = ownerMessageHistory.get(chatId)?.length || 0;
+    ownerMessageHistory.set(chatId, []);
+    return previousLength;
+}
+
+export function getOwnerContextStats(chatId: number): { contextSize: number; storedMessages: number } {
+    return {
+        contextSize: getOwnerContextSize(chatId),
+        storedMessages: ownerMessageHistory.get(chatId)?.length || 0,
+    };
 }
 
 export async function generateResponseForOwner(
     chatId: number,
     message: string,
     imageBuffer?: Buffer,
-    contextSize: number = 10
 ): Promise<string> {
-    // If there's an image, first perform OCR
-    if (imageBuffer) {
-        console.log(message)
-        const ocrResult = await handleImageOCR(imageBuffer, message || undefined);
-        // Add OCR result as assistant message
-        console.log("OCR Result:", ocrResult);
-        addMessage(chatId, "user", `User sent an image containing: ${ocrResult}`);
-        // return ocrResult;
+    const userContextParts: string[] = [];
+
+    if (message.trim()) {
+        userContextParts.push(message.trim());
     }
 
-    // Add the user message to history
-    addMessage(chatId, "user", message);
+    // If there's an image, perform OCR and append the extracted content.
+    if (imageBuffer) {
+        console.log(message);
+        const ocrResult = await handleImageOCR(imageBuffer, message || undefined);
+        console.log("OCR Result:", ocrResult);
+        userContextParts.push(`Image OCR context: ${ocrResult}`);
+    }
 
-    // Get last n messages for context (will load from Telegram if needed)
-    const contextMessages = await getLastMessages(chatId, contextSize);
+    const combinedUserMessage = userContextParts.join("\n\n").trim() || "User sent an empty message.";
+    addOwnerMessage(chatId, "user", combinedUserMessage);
+
+    const contextMessages = getLastOwnerMessages(chatId);
+    const ownerSystemPrompt = await buildOwnerSystemPrompt();
 
     const result = await generateText({
         model: getLanguageModel(),
-        system: systemPrompt,
+        system: ownerSystemPrompt,
         messages: contextMessages as any, // Type compatibility with AI SDK
         tools: allTools,
         stopWhen: stepCountIs(20),
     });
 
-    // Add the assistant response to history
-    addMessage(chatId, "assistant", result.text);
+    addOwnerMessage(chatId, "assistant", result.text);
 
     return result.text;
 }

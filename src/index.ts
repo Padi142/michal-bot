@@ -1,5 +1,11 @@
 import { Bot } from "gramio";
-import { generateResponseForOwner, sendTelegramMessageToOwner } from "./main_bot";
+import {
+    clearOwnerContext,
+    generateResponseForOwner,
+    getOwnerContextStats,
+    setOwnerContextSize,
+    sendTelegramMessageToOwner,
+} from "./main_bot";
 import { generateResponseForGuest, sendTelegramMessageToChat } from "./guest_bot";
 import { downloadTelegramImage } from "./image_utils";
 import { initializeScheduler } from "./scheduler";
@@ -22,9 +28,44 @@ export const bot = new Bot(Bun.env.BOT_TOKEN!)
         const modelName = args[1];
         Bun.env.DEFAULT_MODEL = modelName;
         await sendTelegramMessageToChat(chatId, `Default model set to ${modelName}`);
+    }).command("contextsize", async (context) => {
+        const chatId = context.chatId;
+        if (chatId + "" !== Bun.env.OWNER_CHAT_ID) {
+            return;
+        }
 
+        const args = context.text?.trim().split(/\s+/) || [];
+        if (args.length < 2) {
+            const stats = getOwnerContextStats(chatId);
+            await sendTelegramMessageToChat(
+                chatId,
+                `Current context size is ${stats.contextSize}. Stored messages: ${stats.storedMessages}. Usage: /contextsize <number>`,
+            );
+            return;
+        }
+
+        const contextSize = Number.parseInt(args[1], 10);
+        const result = setOwnerContextSize(chatId, contextSize);
+        if (!result.success) {
+            await sendTelegramMessageToChat(chatId, result.error);
+            return;
+        }
+
+        await sendTelegramMessageToChat(chatId, `Context size set to ${result.contextSize}.`);
+    }).command("clearcontext", async (context) => {
+        const chatId = context.chatId;
+        if (chatId + "" !== Bun.env.OWNER_CHAT_ID) {
+            return;
+        }
+
+        const deletedMessages = clearOwnerContext(chatId);
+        await sendTelegramMessageToChat(chatId, `Context cleared. Removed ${deletedMessages} stored message(s).`);
     }).on("message", async (context) => {
         console.log("Received message:", context.text);
+
+        if (context.text?.startsWith("/")) {
+            return;
+        }
 
         const chatId = context.chatId;
         let userMessage = context.text || "";
